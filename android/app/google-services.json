@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "704108276117",
+    "project_id": "comedores-11c7a",
+    "storage_bucket": "comedores-11c7a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:704108276117:android:4f48fa23566a8f75266e9c",
+        "android_client_info": {
+          "package_name": "com.example.comedor_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3SMwhbrBHEOIDiiyDZ46YE8psqsCUOVY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
