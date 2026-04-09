@@ -14,7 +14,7 @@ class InstitutionalFooter extends StatelessWidget {
       children: [
         // Versión App
         Text(
-          'MeyiSoft Comedor v1.0.0',
+          'MeyiSoft POS v1.0.0',
           style: TextStyle(
             color: textColor,
             fontSize: 12,

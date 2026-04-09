@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../data/models/sale.dart';
+import '../../data/models/cash_movement.dart';
 import '../../data/repositories/business_repository.dart';
 
 // Events
@@ -26,10 +27,10 @@ abstract class SalesHistoryState extends Equatable {
 class SalesHistoryInitial extends SalesHistoryState {}
 class SalesHistoryLoading extends SalesHistoryState {}
 class SalesHistoryLoaded extends SalesHistoryState {
-  final List<Sale> sales;
-  const SalesHistoryLoaded(this.sales);
+  final List<CashMovement> movements;
+  const SalesHistoryLoaded(this.movements);
   @override
-  List<Object?> get props => [sales];
+  List<Object?> get props => [movements];
 }
 
 // BLoC
@@ -43,8 +44,8 @@ class SalesHistoryBloc extends Bloc<SalesHistoryEvent, SalesHistoryState> {
 
   void _onStarted(SalesHistoryStarted event, Emitter<SalesHistoryState> emit) async {
     emit(SalesHistoryLoading());
-    await emit.forEach<List<Sale>>(
-      _repository.watchSalesHistory(),
+    await emit.forEach<List<CashMovement>>(
+      _repository.watchCashMovements(),
       onData: (data) => SalesHistoryLoaded(data),
     );
   }

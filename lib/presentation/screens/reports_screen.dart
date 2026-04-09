@@ -3,14 +3,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 import 'package:vibration/vibration.dart';
-import '../../logic/blocs/reports_bloc.dart';
+import 'dart:ui';
 import '../../logic/blocs/cash_bloc.dart';
 import '../../logic/blocs/auth_bloc.dart';
 import '../../logic/blocs/suppliers_bloc.dart';
-import '../../data/models/supplier.dart';
+import '../../data/repositories/business_repository.dart';
 import '../../widgets/professional_background.dart';
 import '../../widgets/institutional_footer.dart';
-import '../../data/models/expense.dart';
+import '../../widgets/connectivity_chip.dart';
 
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});
@@ -19,128 +19,282 @@ class ReportsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocListener<AuthBloc, AuthState>(
       listener: (context, state) {
-        if (state is AuthUnauthenticated) context.go('/login');
+        if (state is AuthUnauthenticated) {
+          // 🧹 Limpieza TOTAL antes de salir
+          context.read<CashBloc>().add(CashReset());
+          RepositoryProvider.of<BusinessRepository>(context).reset();
+
+          context.go('/login');
+        }
       },
       child: BlocListener<CashBloc, CashState>(
-        listenWhen: (prev, curr) => prev is CashOpen && curr is CashClosed,
         listener: (context, state) {
-          _showChampionDialog(context);
+          if (state is CashError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Theme.of(context).colorScheme.error,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          if (state is CashCloseSuccess) {
+            _showChampionDialog(context);
+          }
         },
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('Mi Negocio Hoy',
-                style: TextStyle(fontWeight: FontWeight.w900)),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: GestureDetector(
-                  onTap: () => context.push('/profile'),
-                  child: BlocBuilder<AuthBloc, AuthState>(
-                    builder: (context, state) {
-                      final initial = (state is AuthAuthenticated &&
-                              state.userName.isNotEmpty)
-                          ? state.userName[0].toUpperCase()
-                          : 'U';
-                      return CircleAvatar(
-                        radius: 18,
-                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                        child: Text(
-                          initial,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: Theme.of(context).colorScheme.primary,
+        child: BlocBuilder<CashBloc, CashState>(
+          builder: (context, state) {
+            final isProcessing = state is CashProcessing;
+            final processingMessage = isProcessing ? state.message : '';
+
+            return Stack(
+              children: [
+                Scaffold(
+                  appBar: buildProAppBar(context),
+                  body: ProfessionalBackground(
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: BlocBuilder<CashBloc, CashState>(
+                            builder: (context, state) {
+                              if (state is CashLoading) {
+                                return Center(
+                                  child: Lottie.asset(
+                                    'assets/animations/circle-loading.json',
+                                    width: 120,
+                                    height: 120,
+                                  ),
+                                );
+                              }
+
+                              final bool isClosed = state is! CashOpen;
+                              final CashOpen? openState =
+                                  state is CashOpen ? state : null;
+
+                              return SingleChildScrollView(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 16),
+                                child: Column(
+                                  children: [
+                                    _TodayVisitsReminder(),
+                                    const SizedBox(height: 16),
+                                    _CashHeroActionCard(),
+                                    const SizedBox(height: 24),
+                                    if (isClosed)
+                                      _CajaCerradaPlaceholder()
+                                    else ...[
+                                      const _NewSaleHero(),
+                                      const SizedBox(height: 24),
+                                      _MainMetricCard(
+                                        label: 'VENTA TOTAL HOY',
+                                        value:
+                                            '\$${openState!.totalSales.toStringAsFixed(0)}',
+                                        delta: 0,
+                                        fondoInicial: openState.initialAmount,
+                                      ),
+                                      const SizedBox(height: 32),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text('RESUMEN DE CUENTAS',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface
+                                                    .withOpacity(0.5),
+                                                letterSpacing: 1.2)),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _PaymentRow(
+                                          label: 'Dinero Físico en Caja',
+                                          value: openState.expectedCash,
+                                          color: Colors.greenAccent.shade700,
+                                          isHighlighted: true),
+                                      const Padding(
+                                        padding:
+                                            EdgeInsets.symmetric(vertical: 8),
+                                        child: Divider(),
+                                      ),
+                                      _PaymentRow(
+                                          label: 'Ventas Efectivo',
+                                          value: openState.cashTotal,
+                                          color: Colors.green),
+                                      _PaymentRow(
+                                          label: 'Tarjeta',
+                                          value: openState.cardTotal,
+                                          color: Colors.blue),
+                                      _PaymentRow(
+                                          label: 'Transferencia',
+                                          value: openState.transferTotal,
+                                          color: Colors.orange),
+                                      _PaymentRow(
+                                          label: 'Gastos del Turno (-)',
+                                          value: openState.totalExpenses,
+                                          color: Colors.red),
+                                      _PaymentRow(
+                                          label: 'Pagos a Proveedor (-)',
+                                          value: openState.supplierPayments,
+                                          color: Colors.redAccent),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ),
-                      );
-                    },
+                        // const InstitutionalFooter(),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          body: ProfessionalBackground(
-            child: Column(
-              children: [
-                Expanded(
-                  child: BlocBuilder<ReportsBloc, ReportsState>(
-                    builder: (context, state) {
-                      if (state is ReportsLoading) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (state is ReportsLoaded) {
-                        final metrics = state.metrics;
-                        return BlocBuilder<CashBloc, CashState>(
-                          builder: (context, cashState) {
-                            final bool isClosed = cashState is CashClosed;
-
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 24, vertical: 16),
-                              child: Column(
-                                children: [
-                                  _TodayVisitsReminder(),
-                                  const SizedBox(height: 16),
-
-                                  _CashHeroActionCard(),
-                                  const SizedBox(height: 24),
-
-                                  if (isClosed)
-                                    _CajaCerradaPlaceholder()
-                                  else ...[
-                                    const _NewSaleHero(),
-                                    const SizedBox(height: 24),
-
-                                    _MainMetricCard(
-                                      label: 'VENTA TOTAL HOY',
-                                      value:
-                                          '\$${(metrics['totalSales'] as double).toStringAsFixed(0)}',
-                                      delta:
-                                          metrics['yesterdayDelta'] as double,
-                                    ),
-                                    const SizedBox(height: 32),
-
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text('RESUMEN DE CUENTAS',
-                                          style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                                              letterSpacing: 1.2)),
-                                    ),
-                                    const SizedBox(height: 16),
-
-                                    _PaymentRow(
-                                        label: 'Efectivo',
-                                        value: metrics['cashTotal'],
-                                        color: Colors.green),
-                                    _PaymentRow(
-                                        label: 'Tarjeta',
-                                        value: metrics['cardTotal'],
-                                        color: Colors.blue),
-                                    _PaymentRow(
-                                        label: 'Transferencia',
-                                        value: metrics['transfTotal'],
-                                        color: Colors.orange),
-                                  ],
-                                ],
-                              ),
-                            );
-                          },
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                ),
-                const InstitutionalFooter(),
-                const SizedBox(height: 16),
+                if (isProcessing) _buildProcessingOverlay(processingMessage),
               ],
-            ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  AppBar buildProAppBar(BuildContext context) {
+    return AppBar(
+      elevation: 0,
+      scrolledUnderElevation: 2,
+      toolbarHeight: 68,
+      centerTitle: false,
+      titleSpacing: 16,
+
+      /// 🎨 Fondo sutil (Material 3 feel)
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Theme.of(context).colorScheme.surface,
+              Theme.of(context).colorScheme.surface.withOpacity(0.95),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
         ),
       ),
+
+      /// 🧠 HEADER INTELIGENTE
+      title: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, state) {
+          final name = (state is AuthAuthenticated && state.userName.isNotEmpty)
+              ? state.userName.split(' ').first
+              : 'Usuario';
+
+          final hour = DateTime.now().hour;
+          final greeting = hour < 12
+              ? 'Buenos días'
+              : hour < 18
+                  ? 'Buenas tardes'
+                  : 'Buenas noches';
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$greeting, $name',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  /// 🟢 Estado negocio
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Negocio activo • Hoy',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              )
+            ],
+          );
+        },
+      ),
+
+      /// ⚙️ ACCIONES
+      actions: [
+        /// 🔌 Conectividad
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ConnectivityChip(),
+        ),
+
+        /// 🔔 Notificaciones con badge
+        // Stack(
+        //   alignment: Alignment.center,
+        //   children: [
+        //     IconButton(
+        //       onPressed: () {
+        //         context.push('/notifications');
+        //       },
+        //       icon: const Icon(Icons.notifications_none_rounded),
+        //       tooltip: 'Notificaciones',
+        //     ),
+
+        //     /// Badge
+
+        //   ],
+        // ),
+
+        /// 👤 PERFIL PRO
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: GestureDetector(
+            onTap: () => context.push('/profile'),
+            child: BlocBuilder<AuthBloc, AuthState>(
+              builder: (context, state) {
+                final initial =
+                    (state is AuthAuthenticated && state.userName.isNotEmpty)
+                        ? state.userName[0].toUpperCase()
+                        : 'U';
+
+                return Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primary.withOpacity(0.10),
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -170,19 +324,56 @@ class ReportsScreen extends StatelessWidget {
                   'Has cerrado tu caja con éxito. Tu reporte diario ha sido generado y guardado.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6), 
-                    fontSize: 14
-                  )
-              ),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.6),
+                      fontSize: 14)),
               const SizedBox(height: 32),
               ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  // 🔄 Refrescar para cambiar a vista de Caja Cerrada
+                  context.read<CashBloc>().add(CashDashboardLoaded());
+                },
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(60),
                   backgroundColor: Theme.of(context).colorScheme.primary,
                 ),
                 child: const Text('¡GENIAL, GRACIAS!',
                     style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcessingOverlay(String message) {
+    return Positioned.fill(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        child: Container(
+          color: Colors.white.withOpacity(0.8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Lottie.asset(
+                'assets/animations/circle-loading.json',
+                width: 150,
+                height: 150,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                message.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1B6CA8),
+                  letterSpacing: 1.5,
+                ),
               ),
             ],
           ),
@@ -204,8 +395,10 @@ class _CashHeroActionCard extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: isClosed 
-                ? (isDark ? colorScheme.surfaceVariant.withOpacity(0.3) : Colors.grey.shade50) 
+            color: isClosed
+                ? (isDark
+                    ? colorScheme.surfaceVariant.withOpacity(0.3)
+                    : Colors.grey.shade50)
                 : colorScheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(32),
             border: Border.all(
@@ -223,9 +416,8 @@ class _CashHeroActionCard extends StatelessWidget {
               Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: isClosed
-                        ? Colors.grey.shade700
-                        : colorScheme.primary,
+                    backgroundColor:
+                        isClosed ? Colors.grey.shade700 : colorScheme.primary,
                     child: Icon(
                         isClosed ? Icons.lock_rounded : Icons.sensors_rounded,
                         color: Colors.white),
@@ -258,10 +450,9 @@ class _CashHeroActionCard extends StatelessWidget {
                     ? 'Abre la caja para comenzar a registrar ventas y ver tus ganancias de hoy.'
                     : 'Tu caja está abierta. Al terminar tu jornada, realiza el corte para generar el reporte.',
                 style: TextStyle(
-                    color: colorScheme.onSurface.withOpacity(0.6), 
-                    fontSize: 13, 
-                    height: 1.4
-                ),
+                    color: colorScheme.onSurface.withOpacity(0.6),
+                    fontSize: 13,
+                    height: 1.4),
               ),
               const SizedBox(height: 24),
               Row(
@@ -300,12 +491,15 @@ class _CashHeroActionCard extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: () => _showAddExpense(context),
                         icon: const Icon(Icons.outbox_rounded, size: 20),
-                        label: const Text('GASTO', style: TextStyle(fontWeight: FontWeight.bold)),
+                        label: const Text('GASTO',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(60),
                           foregroundColor: colorScheme.onSurface,
-                          side: BorderSide(color: colorScheme.onSurface.withOpacity(0.1)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          side: BorderSide(
+                              color: colorScheme.onSurface.withOpacity(0.1)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
                         ),
                       ),
                     ),
@@ -324,7 +518,8 @@ class _CashHeroActionCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 32,
@@ -337,25 +532,26 @@ class _CashHeroActionCard extends StatelessWidget {
           children: [
             Text('Apertura de Caja',
                 style: TextStyle(
-                  fontSize: 24, 
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface
-                )),
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface)),
             const SizedBox(height: 24),
             TextField(
               controller: ctrl,
               autofocus: true,
               keyboardType: TextInputType.number,
               style: TextStyle(
-                fontSize: 42, 
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onSurface
-              ),
+                  fontSize: 42,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface),
               decoration: InputDecoration(
-                  labelText: 'Fondo Inicial', 
+                  labelText: 'Fondo Inicial',
                   prefixText: '\$ ',
-                  labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5))
-              ),
+                  labelStyle: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.5))),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -366,7 +562,8 @@ class _CashHeroActionCard extends StatelessWidget {
               },
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(60),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
               ),
               child: const Text('CONFIRMAR APERTURA'),
             ),
@@ -382,7 +579,8 @@ class _CashHeroActionCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 32,
@@ -401,7 +599,8 @@ class _CashHeroActionCard extends StatelessWidget {
               autofocus: true,
               keyboardType: TextInputType.number,
               style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-              decoration: const InputDecoration(labelText: 'Monto', prefixText: '\$ '),
+              decoration:
+                  const InputDecoration(labelText: 'Monto', prefixText: '\$ '),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -416,24 +615,44 @@ class _CashHeroActionCard extends StatelessWidget {
               onPressed: () {
                 final amount = double.tryParse(amountCtrl.text) ?? 0.0;
                 final desc = descCtrl.text.trim();
+
+                // VALIDACIÓN: No gastar más de lo que hay (Regla Negocio #3)
+                final currentState = context.read<CashBloc>().state;
+                if (currentState is CashOpen) {
+                  if (amount > currentState.expectedCash) {
+                    Vibration.vibrate(duration: 200);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '⚠️ No tienes suficiente efectivo. Saldo actual: \$${currentState.expectedCash.toStringAsFixed(0)}'),
+                        backgroundColor: Colors.redAccent,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+                }
+
                 if (amount > 0 && desc.isNotEmpty) {
-                  final expense = Expense(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    description: desc,
-                    amount: amount,
-                    timestamp: DateTime.now(),
-                  );
-                  context.read<CashBloc>().add(CashExpenseAdded(expense));
+                  context.read<CashBloc>().add(CashExpenseAdded(
+                        category: 'Gasto General',
+                        description: desc,
+                        amount: amount,
+                      ));
                   Navigator.pop(ctx);
                   Vibration.vibrate(duration: 50);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('✅ Gasto por \$${amount.toStringAsFixed(0)} registrado'), behavior: SnackBarBehavior.floating),
+                    SnackBar(
+                        content: Text(
+                            '✅ Gasto por \$${amount.toStringAsFixed(0)} registrado'),
+                        behavior: SnackBarBehavior.floating),
                   );
                 }
               },
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(60),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
               ),
               child: const Text('REGISTRAR GASTO'),
             ),
@@ -450,7 +669,8 @@ class _CashHeroActionCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
           final double manualAmount = double.tryParse(manualCtrl.text) ?? 0.0;
@@ -470,39 +690,47 @@ class _CashHeroActionCard extends StatelessWidget {
                 children: [
                   Text('Corte de Caja',
                       style: TextStyle(
-                        fontSize: 24, 
-                        fontWeight: FontWeight.bold,
-                        color: cs.onSurface
-                      )),
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: cs.onSurface)),
                   const SizedBox(height: 24),
                   _row(context, 'Fondo de Apertura', state.initialAmount),
-                  _row(context, 'Ventas en Efectivo (+)', state.cashSales),
-                  _row(context, 'Ventas con Tarjeta', state.cardSales),
-                  _row(context, 'Ventas con Transferencia', state.transferSales),
-                  _row(context, 'Gastos de Turno (-)', state.totalExpenses, isRed: true),
+                  _row(context, 'Ventas en Efectivo (+)', state.cashTotal),
+                  _row(context, 'Gastos del Turno (-)', state.totalExpenses,
+                      isRed: true),
+                  _row(context, 'Pagos a Proveedor (-)', state.supplierPayments,
+                      isRed: true),
+                  _row(context, 'Ventas con Tarjeta', state.cardTotal),
+                  _row(
+                      context, 'Ventas con Transferencia', state.transferTotal),
                   const Divider(height: 32),
-                  _row(context, 'EFECTIVO ESPERADO EN CAJA', state.expectedCash, strong: true),
-                  
+                  _row(context, 'EFECTIVO ESPERADO EN CAJA', state.expectedCash,
+                      strong: true),
                   const SizedBox(height: 32),
                   TextField(
                     controller: manualCtrl,
                     keyboardType: TextInputType.number,
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: cs.onSurface),
+                    style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: cs.onSurface),
                     decoration: InputDecoration(
-                        labelText: 'Ingresa efectivo físico en caja', 
+                        labelText: 'Ingresa efectivo físico en caja',
                         prefixText: '\$ ',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        labelStyle: TextStyle(color: cs.onSurface.withOpacity(0.5))
-                    ),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        labelStyle:
+                            TextStyle(color: cs.onSurface.withOpacity(0.5))),
                     onChanged: (_) => setState(() {}),
                   ),
-                  
                   if (manualCtrl.text.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: hasShortage ? cs.error.withOpacity(0.12) : Colors.green.withOpacity(0.12),
+                        color: hasShortage
+                            ? cs.error.withOpacity(0.12)
+                            : Colors.green.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
@@ -510,44 +738,54 @@ class _CashHeroActionCard extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(hasShortage ? '⚠️ FALTANTE EN CAJA' : '✅ CAJA CUADRADA',
+                              Text(
+                                  hasShortage
+                                      ? '⚠️ FALTANTE EN CAJA'
+                                      : '✅ CAJA CUADRADA',
                                   style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: hasShortage ? cs.error : Colors.green,
-                                    fontSize: 12
-                                  )),
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          hasShortage ? cs.error : Colors.green,
+                                      fontSize: 12)),
                               Text('\$${diff.abs().toStringAsFixed(2)}',
                                   style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: hasShortage ? cs.error : Colors.green,
-                                    fontSize: 16
-                                  )),
+                                      fontWeight: FontWeight.w900,
+                                      color:
+                                          hasShortage ? cs.error : Colors.green,
+                                      fontSize: 16)),
                             ],
                           ),
                           if (hasShortage)
                             const Padding(
                               padding: EdgeInsets.only(top: 4),
-                              child: Text('El monto físico es menor al esperado.', 
-                                  style: TextStyle(fontSize: 11, color: Colors.red)),
+                              child: Text(
+                                  'El monto físico es menor al esperado.',
+                                  style: TextStyle(
+                                      fontSize: 11, color: Colors.red)),
                             ),
                         ],
                       ),
                     ),
                   ],
-                  
                   const SizedBox(height: 32),
                   ElevatedButton(
                     onPressed: () {
-                      context.read<CashBloc>().add(CashCloseRequested());
+                      final actualAmount =
+                          double.tryParse(manualCtrl.text) ?? 0.0;
+                      context
+                          .read<CashBloc>()
+                          .add(CashCloseRequested(actualAmount));
                       Navigator.pop(ctx);
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: hasShortage ? cs.error : cs.onSurface,
                       foregroundColor: cs.surface,
                       minimumSize: const Size.fromHeight(60),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: Text(hasShortage ? 'CERRAR CON FALTANTE' : 'REALIZAR CORTE'),
+                    child: Text(
+                        hasShortage ? 'CERRAR CON FALTANTE' : 'REALIZAR CORTE'),
                   ),
                 ],
               ),
@@ -558,7 +796,8 @@ class _CashHeroActionCard extends StatelessWidget {
     );
   }
 
-  Widget _row(BuildContext context, String label, double val, {bool strong = false, bool isRed = false}) {
+  Widget _row(BuildContext context, String label, double val,
+      {bool strong = false, bool isRed = false}) {
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -651,8 +890,14 @@ class _PaymentRow extends StatelessWidget {
   final String label;
   final double value;
   final Color color;
-  const _PaymentRow(
-      {required this.label, required this.value, required this.color});
+  final bool isHighlighted;
+
+  const _PaymentRow({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.isHighlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -663,8 +908,13 @@ class _PaymentRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: cs.surface,
+        color: isHighlighted
+            ? color.withOpacity(isDark ? 0.15 : 0.08)
+            : cs.surface,
         borderRadius: BorderRadius.circular(20),
+        border: isHighlighted
+            ? Border.all(color: color.withOpacity(0.3), width: 1.5)
+            : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.3 : 0.02),
@@ -675,23 +925,29 @@ class _PaymentRow extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            width: isHighlighted ? 16 : 12,
+            height: isHighlighted ? 16 : 12,
+            decoration:
+                BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [
+              if (isHighlighted)
+                BoxShadow(
+                    color: color.withOpacity(0.4),
+                    blurRadius: 8,
+                    spreadRadius: 2)
+            ]),
           ),
           const SizedBox(width: 16),
           Text(label,
               style: TextStyle(
-                fontWeight: FontWeight.bold, 
-                fontSize: 16,
-                color: Theme.of(context).colorScheme.onSurface
-              )),
+                  fontWeight: isHighlighted ? FontWeight.w900 : FontWeight.bold,
+                  fontSize: isHighlighted ? 18 : 16,
+                  color: isHighlighted ? color : cs.onSurface)),
           const Spacer(),
           Text('\$${value.toStringAsFixed(2)}',
               style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  color: Theme.of(context).colorScheme.primary)),
+                  fontSize: isHighlighted ? 22 : 18,
+                  color: isHighlighted ? color : cs.primary)),
         ],
       ),
     );
@@ -739,8 +995,13 @@ class _MainMetricCard extends StatelessWidget {
   final String label;
   final String value;
   final double delta;
+  final double fondoInicial;
+
   const _MainMetricCard(
-      {required this.label, required this.value, required this.delta});
+      {required this.label,
+      required this.value,
+      required this.delta,
+      required this.fondoInicial});
 
   @override
   Widget build(BuildContext context) {
@@ -750,7 +1011,8 @@ class _MainMetricCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
+        border:
+            Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
         boxShadow: [
           BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20)
         ],
@@ -761,7 +1023,8 @@ class _MainMetricCard extends StatelessWidget {
               style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
                   letterSpacing: 1.5)),
           const SizedBox(height: 12),
           Text(value,
@@ -779,10 +1042,9 @@ class _MainMetricCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.arrow_upward_rounded,
-                    color: Colors.green, size: 18),
+                const Icon(Icons.money, color: Colors.green, size: 18),
                 const SizedBox(width: 4),
-                Text('\$${delta.toStringAsFixed(0)} más que ayer',
+                Text('\$${fondoInicial.toStringAsFixed(0)} fondo inicial',
                     style: const TextStyle(
                         color: Colors.green, fontWeight: FontWeight.bold)),
               ],
@@ -801,32 +1063,43 @@ class _TodayVisitsReminder extends StatelessWidget {
       builder: (context, state) {
         if (state is SuppliersLoaded) {
           final today = _getTodayName();
-          final visitToday = state.suppliers.where((s) => s.visitDay.contains(today)).toList();
-          
+          final visitToday = state.suppliers
+              .where((s) => s.visitDay?.contains(today) ?? false)
+              .toList();
+
           if (visitToday.isEmpty) return const SizedBox.shrink();
 
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+              color: Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withOpacity(0.3),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.1)),
+              border: Border.all(
+                  color:
+                      Theme.of(context).colorScheme.primary.withOpacity(0.1)),
             ),
             child: Row(
               children: [
-                Icon(Icons.event_available_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                Icon(Icons.event_available_rounded,
+                    color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'Hoy te visita: ${visitToday.map((s) => s.name.split(' ')[0]).join(', ')}',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface, 
-                      fontWeight: FontWeight.bold, 
-                      fontSize: 13
-                    ),
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13),
                   ),
                 ),
-                Text('⚠️ Prepara efectivo', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold)),
+                Text('⚠️ Prepara efectivo',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
           );
@@ -837,7 +1110,15 @@ class _TodayVisitsReminder extends StatelessWidget {
   }
 
   String _getTodayName() {
-    final days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    final days = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo'
+    ];
     return days[DateTime.now().weekday - 1];
   }
 }

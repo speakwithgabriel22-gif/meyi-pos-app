@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/supplier.dart';
 import '../../data/models/reception.dart';
@@ -93,8 +94,13 @@ class SuppliersBloc extends Bloc<SuppliersEvent, SuppliersState> {
     }
   }
 
-  void _onDebtPaid(SuppliersDebtPaid event, Emitter<SuppliersState> emit) {
-    _repository.paySupplierDebt(event.supplierId, event.amount);
+  Future<void> _onDebtPaid(
+      SuppliersDebtPaid event, Emitter<SuppliersState> emit) async {
+    try {
+      await _repository.paySupplierDebt(event.supplierId, event.amount);
+    } catch (error) {
+      debugPrint('SuppliersBloc.paySupplierDebt error: $error');
+    }
   }
 
   void _onAdded(SuppliersAdded event, Emitter<SuppliersState> emit) {

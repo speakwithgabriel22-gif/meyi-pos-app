@@ -1,13 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lottie/lottie.dart';
+import 'dart:ui';
 import '../../widgets/professional_background.dart';
+import '../../data/services/auth_service.dart';
+import '../../logic/blocs/cash_bloc.dart';
+import '../../logic/blocs/inventory_bloc.dart';
+import '../../logic/blocs/reports_bloc.dart';
+import '../../logic/blocs/sales_history_bloc.dart';
+import '../../logic/blocs/suppliers_bloc.dart';
 
 /// Onboarding profesional de 0-fricción para nuevos usuarios.
 /// Solo 3 pasos: Bienvenida → Nombre de Tienda → Listo.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key});
+  /// Teléfono y PIN del usuario que intentó login y no existía
+  final String phone;
+  final String pin;
+
+  const OnboardingScreen({
+    super.key,
+    required this.phone,
+    required this.pin,
+  });
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -18,6 +35,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   final _pageController = PageController();
   final _storeNameCtrl = TextEditingController();
   final _ownerNameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
 
   int _currentPage = 0;
   bool _isFinishing = false;
@@ -63,6 +81,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     _pageController.dispose();
     _storeNameCtrl.dispose();
     _ownerNameCtrl.dispose();
+    _emailCtrl.dispose();
     _fadeCtrl.dispose();
     _scaleCtrl.dispose();
     _successCtrl.dispose();
@@ -94,11 +113,27 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     setState(() => _isFinishing = true);
     _successCtrl.forward();
 
-    // Simular guardado en backend
-    await Future.delayed(const Duration(milliseconds: 1200));
+    // Registrar con los datos que llegaron directamente del LoginScreen vía router
+    final response = await AuthService().register(
+      storeName: _storeNameCtrl.text.trim(),
+      ownerName: _ownerNameCtrl.text.trim(),
+      email: _emailCtrl.text.trim(),
+      phone: widget.phone,
+      pin: widget.pin,
+    );
 
-    if (mounted) {
-      context.go('/home');
+    if (response.success) {
+      if (mounted) {
+        context.read<CashBloc>().add(CashDashboardLoaded());
+        context.read<InventoryBloc>().add(InventoryStarted());
+        context.read<SuppliersBloc>().add(SuppliersStarted());
+        context.read<ReportsBloc>().add(ReportsStarted());
+        context.read<SalesHistoryBloc>().add(SalesHistoryStarted());
+        context.go('/home');
+      }
+    } else {
+      setState(() => _isFinishing = false);
+      _showQuickSnack(response.message ?? 'Ocurrió un error al crear tu tienda');
     }
   }
 
@@ -107,64 +142,119 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final primaryColor = Theme.of(context).colorScheme.primary;
     final darkText = Theme.of(context).colorScheme.onSurface;
 
-    return Scaffold(
-      body: ProfessionalBackground(
-        child: SafeArea(
-          child: Column(
-            children: [
-              // ---- Top bar con indicador de progreso ----
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Row(
+    return AnimatedBuilder(
+      animation: _fadeAnim,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _fadeAnim.value,
+          child: child,
+        );
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            ProfessionalBackground(
+              child: SafeArea(
+                child: Column(
                   children: [
-                    if (_currentPage > 0)
-                      GestureDetector(
-                        onTap: _previousPage,
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Theme.of(context).dividerColor),
+                    // ---- Top bar con indicador de progreso ----
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 16),
+                      child: Row(
+                        children: [
+                          if (_currentPage > 0)
+                            GestureDetector(
+                              onTap: _previousPage,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: Theme.of(context).dividerColor),
+                                ),
+                                child: Icon(Icons.arrow_back_rounded,
+                                    size: 20, color: darkText),
+                              ),
+                            )
+                          else
+                            const SizedBox(width: 40),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildProgressBar(primaryColor)),
+                          const SizedBox(width: 16),
+                          Text(
+                            '${_currentPage + 1}/4',
+                            style: GoogleFonts.outfit(
+                              color: Colors.grey.shade500,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
                           ),
-                          child: Icon(Icons.arrow_back_rounded,
-                              size: 20, color: darkText),
-                        ),
-                      )
-                    else
-                      const SizedBox(width: 40),
-                    const SizedBox(width: 16),
-                    Expanded(child: _buildProgressBar(primaryColor)),
-                    const SizedBox(width: 16),
-                    Text(
-                      '${_currentPage + 1}/4',
-                      style: GoogleFonts.outfit(
-                        color: Colors.grey.shade500,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                        ],
+                      ),
+                    ),
+    
+                    // ---- Pages ----
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        onPageChanged: (page) {
+                          setState(() => _currentPage = page);
+                          if (page == 2) _successCtrl.forward();
+                        },
+                        children: [
+                          _buildWelcomePage(primaryColor, darkText),
+                          _buildStoreInfoPage(primaryColor, darkText),
+                          _buildPricingPage(primaryColor, darkText),
+                          _buildReadyPage(primaryColor, darkText),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
+            if (_isFinishing) _buildLoadingOverlay(),
+          ],
+        ),
+      ),
+    );
+  }
 
-              // ---- Pages ----
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  onPageChanged: (page) {
-                    setState(() => _currentPage = page);
-                    if (page == 2) _successCtrl.forward();
-                  },
-                  children: [
-                    _buildWelcomePage(primaryColor, darkText),
-                    _buildStoreInfoPage(primaryColor, darkText),
-                    _buildPricingPage(primaryColor, darkText),
-                    _buildReadyPage(primaryColor, darkText),
-                  ],
+  Widget _buildLoadingOverlay() {
+    return Positioned.fill(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+        child: Container(
+          color: Colors.white.withOpacity(0.8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Lottie.asset(
+                'assets/animations/circle-loading.json',
+                width: 150,
+                height: 150,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'PREPARANDO TU TIENDA...',
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF1B6CA8),
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Estamos configurando todo para que\npuedas empezar a vender.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
                 ),
               ),
             ],
@@ -438,6 +528,25 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             icon: Icons.person_rounded,
             primaryBlue: primaryBlue,
           ),
+          const SizedBox(height: 24),
+
+          // Correo del dueño
+          Text(
+            'CORREO ELECTRÓNICO',
+            style: GoogleFonts.outfit(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade500,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildTextField(
+            controller: _emailCtrl,
+            hint: 'Ej: contacto@tienda.com',
+            icon: Icons.email_rounded,
+            primaryBlue: primaryBlue,
+          ),
 
           const SizedBox(height: 48),
           _buildPrimaryButton(
@@ -451,13 +560,21 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 _showQuickSnack('Escribe tu nombre');
                 return;
               }
+              if (_emailCtrl.text.trim().isEmpty) {
+                _showQuickSnack('Escribe tu correo electrónico');
+                return;
+              }
+              FocusScope.of(context).unfocus();
               _nextPage();
             },
           ),
           const SizedBox(height: 16),
           Center(
             child: TextButton(
-              onPressed: _nextPage,
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                _nextPage();
+              },
               child: Text(
                 'Configurar después',
                 style: GoogleFonts.outfit(

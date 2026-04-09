@@ -29,4 +29,5 @@ class AppColors {
   static const Color ready = Color(0xFF34C759); // Verde (¡Listo!)
   static const Color delivered = Color(0xFF8E8E93); // Gris (Historial)
   static const Color cancelled = Color(0xFFFF3B30); // Rojo Error
+  static const Color warning = Color(0xFFFF9800); // 🆕 Para sincronización
 }

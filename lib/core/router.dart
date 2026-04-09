@@ -10,7 +10,7 @@ import '../presentation/screens/main_wrapper.dart';
 import '../presentation/screens/inventory_screen.dart';
 import '../presentation/screens/suppliers_screen.dart';
 import '../presentation/screens/sales_history_screen.dart';
-import '../presentation/screens/windows_pos.dart';
+import '../presentation/screens/reports_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -28,10 +28,16 @@ final router = GoRouter(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
     ),
-    // Onboarding (nuevos usuarios)
+    // Onboarding (nuevos usuarios) — recibe phone y pin del login
     GoRoute(
       path: '/onboarding',
-      builder: (context, state) => const OnboardingScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, String>? ?? {};
+        return OnboardingScreen(
+          phone: extra['phone'] ?? '',
+          pin: extra['pin'] ?? '',
+        );
+      },
     ),
     // Perfil de usuario
     GoRoute(
@@ -51,7 +57,7 @@ final router = GoRouter(
           routes: [
             GoRoute(
               path: '/home',
-              builder: (context, state) => const PosScreen(),
+              builder: (context, state) => const ReportsScreen(),
             ),
           ],
         ),

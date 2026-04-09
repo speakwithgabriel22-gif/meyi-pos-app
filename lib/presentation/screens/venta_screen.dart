@@ -7,9 +7,12 @@ import 'package:vibration/vibration.dart';
 import 'package:lottie/lottie.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../logic/blocs/cart_bloc.dart';
+import '../../logic/blocs/cash_bloc.dart';
 import '../../data/models/product.dart';
 import '../../widgets/professional_background.dart';
 import '../widgets/scanner_error_widget.dart';
+import '../../utils/constants.dart';
+import '../../utils/uuid_generator.dart';
 
 class VentaScreen extends StatefulWidget {
   const VentaScreen({super.key});
@@ -278,6 +281,7 @@ class _VentaScreenState extends State<VentaScreen> {
   }
 
   void _showMissingPriceSheet(BuildContext context, String upc, String name) {
+    final nameCtrl = TextEditingController(text: name);
     final ctrl = TextEditingController();
     showModalBottomSheet(
       context: context,
@@ -293,6 +297,14 @@ class _VentaScreenState extends State<VentaScreen> {
             Text(name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
             const SizedBox(height: 24),
             TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Nombre rapido en tu tienda',
+                prefixIcon: Icon(Icons.edit_rounded),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
               controller: ctrl,
               autofocus: true,
               keyboardType: TextInputType.number,
@@ -304,8 +316,19 @@ class _VentaScreenState extends State<VentaScreen> {
               ),
               onSubmitted: (_) {
                 final p = double.tryParse(ctrl.text) ?? 0.0;
-                if (p > 0) {
-                  context.read<CartBloc>().add(CartProductAdded(Product(upc: upc, name: name, price: p)));
+                final localName = nameCtrl.text.trim();
+                if (p > 0 && localName.isNotEmpty) {
+                  final tenantId = Constants.tenantId ?? 'offline-tenant';
+                  final now = DateTime.now().toIso8601String();
+                  context.read<CartBloc>().add(CartProductAdded(Product(
+                    id: 'new-${UuidGenerator.generate().substring(0,8)}',
+                    tenantId: tenantId,
+                    upc: upc, 
+                    name: localName, 
+                    price: p,
+                    createdAt: now,
+                    updatedAt: now,
+                  )));
                   Navigator.pop(ctx);
                 }
               },
@@ -314,12 +337,23 @@ class _VentaScreenState extends State<VentaScreen> {
             ElevatedButton(
               onPressed: () {
                 final p = double.tryParse(ctrl.text) ?? 0.0;
-                if (p > 0) {
-                  context.read<CartBloc>().add(CartProductAdded(Product(upc: upc, name: name, price: p)));
+                final localName = nameCtrl.text.trim();
+                if (p > 0 && localName.isNotEmpty) {
+                  final tenantId = Constants.tenantId ?? 'offline-tenant';
+                  final now = DateTime.now().toIso8601String();
+                  context.read<CartBloc>().add(CartProductAdded(Product(
+                    id: 'new-${UuidGenerator.generate().substring(0,8)}',
+                    tenantId: tenantId,
+                    upc: upc, 
+                    name: localName, 
+                    price: p,
+                    createdAt: now,
+                    updatedAt: now,
+                  )));
                   Navigator.pop(ctx);
                 }
               },
-              child: const Text('AGREGAR AL CARRITO'),
+              child: const Text('GUARDAR PRECIO Y AGREGAR'),
             ),
           ],
         ),
@@ -352,7 +386,17 @@ class _VentaScreenState extends State<VentaScreen> {
                 final n = nCtrl.text.trim();
                 final p = double.tryParse(pCtrl.text) ?? 0.0;
                 if (n.isNotEmpty && p > 0) {
-                  context.read<CartBloc>().add(CartProductAdded(Product(upc: upc, name: n, price: p)));
+                  final tenantId = Constants.tenantId ?? 'offline-tenant';
+                  final now = DateTime.now().toIso8601String();
+                  context.read<CartBloc>().add(CartProductAdded(Product(
+                    id: 'new-${UuidGenerator.generate().substring(0,8)}',
+                    tenantId: tenantId,
+                    upc: upc, 
+                    name: n, 
+                    price: p,
+                    createdAt: now,
+                    updatedAt: now,
+                  )));
                   Navigator.pop(ctx);
                 }
               },
@@ -363,7 +407,17 @@ class _VentaScreenState extends State<VentaScreen> {
                 final n = nCtrl.text.trim();
                 final p = double.tryParse(pCtrl.text) ?? 0.0;
                 if (n.isNotEmpty && p > 0) {
-                  context.read<CartBloc>().add(CartProductAdded(Product(upc: upc, name: n, price: p)));
+                  final tenantId = Constants.tenantId ?? 'offline-tenant';
+                  final now = DateTime.now().toIso8601String();
+                  context.read<CartBloc>().add(CartProductAdded(Product(
+                    id: 'new-${UuidGenerator.generate().substring(0,8)}',
+                    tenantId: tenantId,
+                    upc: upc, 
+                    name: n, 
+                    price: p,
+                    createdAt: now,
+                    updatedAt: now,
+                  )));
                   Navigator.pop(ctx);
                 }
               },

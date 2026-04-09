@@ -70,7 +70,8 @@ class CartMissingPrice extends CartState {
   final String upc;
   final String name;
   const CartMissingPrice(super.items, this.upc, this.name);
-  @override List<Object> get props => [items, upc, name];
+  @override
+  List<Object> get props => [items, upc, name];
 }
 
 class CartNotFound extends CartState {
@@ -111,10 +112,24 @@ class CartBloc extends Bloc<CartEvent, CartState> {
       }
     });
 
-    on<CartProductAdded>((event, emit) {
-      final existingIndex = state.items.indexWhere((i) => i.product.upc == event.product.upc);
-      List<CartItem> newItems;
+    on<CartProductAdded>((event, emit) async {
+      if (event.product.price <= 0) {
+        emit(CartMissingPrice(
+          state.items,
+          event.product.upc,
+          event.product.name,
+        ));
+        return;
+      }
 
+      final existingIndex = state.items.indexWhere((i) => i.product.upc == event.product.upc);
+      
+      // 🔥 Si el producto es nuevo (Nivel 2 o 3), lo persistimos en la base de datos local
+      if (event.product.id == null || event.product.id!.startsWith('new-')) {
+        await _posService.addProduct(event.product);
+      }
+
+      List<CartItem> newItems;
       if (existingIndex >= 0) {
         newItems = List.from(state.items);
         final existingItem = newItems[existingIndex];
